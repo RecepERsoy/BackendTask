@@ -1,17 +1,24 @@
 ﻿using MediatR;
+using Product.Application.Interfaces.Repositories;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Product.Application.Features.Products.Commands.CreateProduct
 {
-    // IRequestHandler<Hangi Komut, Ne Döndürecek>
     public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand, Guid>
     {
-        // Handle metodu, CreateProductCommand tetiklendiğinde otomatik çalışır.
+        private readonly IProductRepository _productRepository;
+
+        // Dependency Injection: Handler ayağa kalktığında bana bir IProductRepository ver diyoruz.
+        public CreateProductCommandHandler(IProductRepository productRepository)
+        {
+            _productRepository = productRepository;
+        }
+
         public async Task<Guid> Handle(CreateProductCommand request, CancellationToken cancellationToken)
         {
-            // 1. Gelen request (istek) verileriyle yeni bir Domain Entity'si (Product) oluştur.
+            // Gelen request verileriyle yeni ürün nesnesini oluştur
             var newProduct = new Domain.Entities.Product
             {
                 Id = Guid.NewGuid(),
@@ -21,12 +28,13 @@ namespace Product.Application.Features.Products.Commands.CreateProduct
                 CreatedDate = DateTime.UtcNow
             };
 
-            // 2. TODO: Burada veritabanına kaydetme (DbContext) işlemi yapılacak.
+          
+            await _productRepository.AddAsync(newProduct);
 
-            // 3. TODO: Görevde istenen "Ürün eklendikten sonra event fırlatılmalı" işlemi burada yapılacak.
+            
 
-            // 4. Eklenen ürünün ID'sini geri dönüyoruz.
-            return await Task.FromResult(newProduct.Id);
+            // Eklenen ürünün ID'sini geri dön
+            return newProduct.Id;
         }
     }
 }
