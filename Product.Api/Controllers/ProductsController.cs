@@ -1,6 +1,7 @@
 ﻿using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using Product.Application.Features.Products.Commands.CreateProduct;
+using Product.Application.Features.Products.Queries.GetProducts;
 using System.Threading.Tasks;
 
 namespace Product.Api.Controllers
@@ -25,6 +26,16 @@ namespace Product.Api.Controllers
             var productId = await _mediator.Send(command);
 
             return Ok(new { Id = productId, Message = "Ürün başarıyla eklendi." });
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetProducts()
+        {
+            // "Ürünleri getir" mesajını MediatR'a fırlat, o gidip Dapper'lı Handler'ı bulup çalıştıracak
+            var query = new GetProductsQuery();
+            var products = await _mediator.Send(query);
+
+            return Ok(products);
         }
     }
 }
