@@ -1,9 +1,8 @@
 ﻿using MediatR;
-using System;
 
 namespace Product.Application.Features.Products.Commands.CreateProduct
 {
-    
+
     public class CreateProductCommand : IRequest<Guid>
     {
         public string Name { get; set; } = string.Empty;

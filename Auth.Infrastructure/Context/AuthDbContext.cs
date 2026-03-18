@@ -9,7 +9,7 @@ namespace Auth.Infrastructure.Context
         {
         }
 
-        
+
         public DbSet<User> Users { get; set; }
     }
 }

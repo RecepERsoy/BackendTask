@@ -3,11 +3,7 @@ using MediatR;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
-using System;
-using System.Collections.Generic;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace Product.Application.Features.Products.Queries.GetProducts
 {
@@ -16,7 +12,7 @@ namespace Product.Application.Features.Products.Queries.GetProducts
         private readonly IConfiguration _configuration;
         private readonly IDistributedCache _cache;
 
-        // Dependency Injection ile hem Ayarları hem de Redis Cache'i içeri alıyoruz
+        // Dependency Injection ile hem Ayarları hem de Redis Cache'i içeri al
         public GetProductsQueryHandler(IConfiguration configuration, IDistributedCache cache)
         {
             _configuration = configuration;
@@ -25,6 +21,7 @@ namespace Product.Application.Features.Products.Queries.GetProducts
 
         public async Task<IEnumerable<Domain.Entities.Product>> Handle(GetProductsQuery request, CancellationToken cancellationToken)
         {
+            
             const string cacheKey = "productList";
 
             // ÖNCE REDIS'E BAK: Veri cache'te var mı?
@@ -32,7 +29,7 @@ namespace Product.Application.Features.Products.Queries.GetProducts
 
             if (!string.IsNullOrEmpty(cachedProducts))
             {
-                // Eğer Redis'te varsa, SQL'i hiç yorma! Metni (JSON) listeye çevir ve anında geri dön.
+                // Eğer Redis'te varsa, metni (JSON) listeye çevir ve geri dön.
                 return JsonSerializer.Deserialize<IEnumerable<Domain.Entities.Product>>(cachedProducts) ?? new List<Domain.Entities.Product>();
             }
 
