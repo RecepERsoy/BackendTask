@@ -6,11 +6,23 @@ using Product.Application.Features.Products.Commands.CreateProduct;
 using Product.Application.Interfaces.Repositories;
 using Product.Infrastructure.Context;
 using Product.Infrastructure.Repositories;
+using MassTransit;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host("localhost", "/", h =>
+        {
+            h.Username("guest");
+            h.Password("guest");
+        });
+    });
+});
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
