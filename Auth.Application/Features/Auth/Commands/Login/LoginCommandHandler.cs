@@ -4,14 +4,27 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Auth.Application.Features.Auth.Commands.Login
 {
-    public class LoginCommandHandler : IRequestHandler<LoginCommand, string>
+    /// <summary>
+    /// Kimlik doğrulama işlemi sonucunda istemciye iletilecek olan erişim (Access) ve yenileme (Refresh) jetonlarını taşıyan veri transfer nesnesi (DTO).
+    /// </summary>
+    public class AuthResponseDto
+    {
+        public string AccessToken { get; set; } = string.Empty;
+        public string RefreshToken { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// CQRS Pattern - Kullanıcı giriş işlemlerini ve token üretim süreçlerini (JWT & Refresh Token) yöneten Command Handler.
+    /// </summary>
+    public class LoginCommandHandler : IRequestHandler<LoginCommand, AuthResponseDto>
     {
         private readonly IAuthRepository _authRepository;
-        private readonly IConfiguration _configuration; // appsettings.json'daki gizli anahtarı okumak için
+        private readonly IConfiguration _configuration;
 
         public LoginCommandHandler(IAuthRepository authRepository, IConfiguration configuration)
         {
@@ -19,25 +32,23 @@ namespace Auth.Application.Features.Auth.Commands.Login
             _configuration = configuration;
         }
 
-        public async Task<string> Handle(LoginCommand request, CancellationToken cancellationToken)
+        public async Task<AuthResponseDto> Handle(LoginCommand request, CancellationToken cancellationToken)
         {
-            // KULLANICI KONTROLÜ: Veritabanında bu e-postaya sahip biri var mı?
+            // Veri tutarlılığı ve güvenlik kontrolü: E-posta adresi sistemde kayıtlı değilse işlem reddedilir.
             var user = await _authRepository.GetUserByEmailAsync(request.Email);
             if (user == null)
             {
-                return "Hata: Kullanıcı bulunamadı!";
+                throw new Exception("Hata: Kullanıcı bulunamadı!");
             }
 
-            // ŞİFRE KONTROLÜ (BCRYPT): Gelen düz şifre, veritabanındaki hash ile eşleşiyor mu?
+            // Şifre doğrulama: Güvenlik zafiyetlerini önlemek amacıyla düz metin yerine BCrypt algoritması ile hash karşılaştırması yapılır.
             bool isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash);
             if (!isPasswordValid)
             {
-                return "Hata: Şifre yanlış!";
+                throw new Exception("Hata: Şifre yanlış!");
             }
 
-            // EŞLEŞME BAŞARILI
-
-            // Kartın içine yazılacak bilgiler (Claims)
+            // Erişim Jetonu (Access Token) Üretimi: Kullanıcıya mikroservisler arası yetkilendirme sağlayacak süreli (1 saat) JWT oluşturulur.
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
@@ -46,11 +57,9 @@ namespace Auth.Application.Features.Auth.Commands.Login
                 new Claim(ClaimTypes.Role, user.Role)
             };
 
-            // appsettings.json'daki gizli anahtarı al
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-            // Token'ın kurallarını belirleme (1 saat geçerli)
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(claims),
@@ -60,12 +69,35 @@ namespace Auth.Application.Features.Auth.Commands.Login
                 SigningCredentials = creds
             };
 
-            // Token'ı üret
             var tokenHandler = new JwtSecurityTokenHandler();
-            var token = tokenHandler.CreateToken(tokenDescriptor);
+            var jwtToken = tokenHandler.CreateToken(tokenDescriptor);
+            string accessToken = tokenHandler.WriteToken(jwtToken);
 
-            // Token'ı şifreli bir metin olarak dışarıya ver
-            return tokenHandler.WriteToken(token);
+            // Yenileme Jetonu (Refresh Token) Üretimi ve Kaydı: Access token süresi dolduğunda oturumun kesintisiz devam etmesi için kullanıcıya 7 günlük yeni bir jeton atanır.
+            string refreshToken = GenerateRefreshToken();
+
+            user.RefreshToken = refreshToken;
+            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+
+            // Yenileme jetonunun doğrulanabilmesi için güncel bilgilerin veritabanına kalıcı olarak işlenmesi.
+            await _authRepository.UpdateAsync(user);
+
+            return new AuthResponseDto
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshToken
+            };
+        }
+
+        /// <summary>
+        /// Kriptografik olarak güvenli (Cryptographically Secure), 32 byte uzunluğunda rastgele bir yenileme jetonu (Refresh Token) üretir.
+        /// </summary>
+        private static string GenerateRefreshToken()
+        {
+            var randomNumber = new byte[32];
+            using var rng = RandomNumberGenerator.Create();
+            rng.GetBytes(randomNumber);
+            return Convert.ToBase64String(randomNumber);
         }
     }
 }

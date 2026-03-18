@@ -27,5 +27,14 @@ namespace Auth.Infrastructure.Repositories
             await _context.Users.AddAsync(user);
             await _context.SaveChangesAsync();
         }
+        public async Task UpdateAsync(User user)
+        {
+            _context.Users.Update(user);
+            await _context.SaveChangesAsync();
+        }
+        public async Task<User?> GetUserByRefreshTokenAsync(string refreshToken)
+        {
+            return await _context.Users.FirstOrDefaultAsync(u => u.RefreshToken == refreshToken);
+        }
     }
 }

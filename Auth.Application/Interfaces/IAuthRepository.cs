@@ -7,5 +7,7 @@ namespace Auth.Application.Interfaces
     {
         Task<User?> GetUserByEmailAsync(string email);
         Task AddUserAsync(User user);
+        Task UpdateAsync(User user);
+        Task<User?> GetUserByRefreshTokenAsync(string refreshToken);
     }
 }
