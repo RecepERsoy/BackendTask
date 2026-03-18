@@ -20,5 +20,17 @@ namespace Product.Infrastructure.Repositories
             await _context.SaveChangesAsync();
             return product;
         }
+        public async Task<Domain.Entities.Product?> GetByIdAsync(Guid id)
+        {
+            // Veritabanından (örneğin _context.Products üzerinden) ID'ye göre ürünü bul
+            return await _context.Products.FindAsync(id);
+        }
+
+        public async Task UpdateAsync(Domain.Entities.Product product)
+        {
+            // Ürünü güncelle ve veritabanına kaydet
+            _context.Products.Update(product);
+            await _context.SaveChangesAsync();
+        }
     }
 }

@@ -38,5 +38,22 @@ namespace Product.Api.Controllers
 
             return Ok(products);
         }
+        /// <summary>
+        /// Mevcut bir ürünü günceller. Bu işlem JWT doğrulaması ve yetki gerektirir.
+        /// </summary>
+        [HttpPut("update")]
+        [Authorize] // SADECE TOKEN'I OLANLAR GİREBİLİR!
+        public async Task<IActionResult> UpdateProduct([FromBody] Product.Application.Features.Products.Commands.UpdateProduct.UpdateProductCommand command)
+        {
+            try
+            {
+                var result = await _mediator.Send(command);
+                return Ok(new { message = "Ürün başarıyla güncellendi." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
     }
 }
