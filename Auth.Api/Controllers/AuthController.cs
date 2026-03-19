@@ -24,16 +24,22 @@ namespace Auth.Api.Controllers
         /// Sisteme yeni bir kullanıcı kaydeder.
         /// </summary>
         [HttpPost("register")]
-        public async Task<IActionResult> Register([FromBody] RegisterCommand command)
+        public async Task<IActionResult> Register([FromBody] Auth.Application.Features.Auth.Commands.Register.RegisterCommand command)
         {
-            var result = await _mediator.Send(command);
-
-            if (result.StartsWith("Hata"))
+            try
             {
-                return BadRequest(new { error = result });
-            }
+                // İşlem başarılı olursa result artık yeni kullanıcının ID'si (Guid) olacak.
+                var result = await _mediator.Send(command);
 
-            return Ok(new { message = result });
+                // Başarılı kayıtta ID'yi geri dönüyoruz.
+                return Ok(new { Message = "Kullanıcı başarıyla oluşturuldu.", UserId = result });
+            }
+            catch (Exception ex)
+            {
+                // Eğer Handler'da bir hata fırlatıldıysa (örn: Şifre çok kısa, Email kullanılıyor vs.)
+                // Kod direkt buraya düşer ve hatayı 400 Bad Request olarak döndürür.
+                return BadRequest(new { Error = ex.Message });
+            }
         }
 
         /// <summary>

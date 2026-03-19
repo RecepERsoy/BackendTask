@@ -1,6 +1,7 @@
 ﻿using Auth.Application.Features.Auth.Commands.Login;
-using Auth.Application.Interfaces;
+using Auth.Domain.Entities;
 using MediatR;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -10,71 +11,71 @@ using System.Text;
 
 namespace Auth.Application.Features.Auth.Commands.RefreshToken
 {
-    /// <summary>
-    /// Süresi dolan Access Token'ları yenilemek için Refresh Token doğrulamasını ve yeni token üretimini yönetir.
-    /// </summary>
     public class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCommand, AuthResponseDto>
     {
-        private readonly IAuthRepository _authRepository;
+        private readonly UserManager<User> _userManager;
         private readonly IConfiguration _configuration;
-
-        public RefreshTokenCommandHandler(IAuthRepository authRepository, IConfiguration configuration)
+        public RefreshTokenCommandHandler(UserManager<User> userManager, IConfiguration configuration)
         {
-            _authRepository = authRepository;
+            _userManager = userManager;
             _configuration = configuration;
         }
 
         public async Task<AuthResponseDto> Handle(RefreshTokenCommand request, CancellationToken cancellationToken)
         {
-            // 1. Gelen Refresh Token veritabanında var mı?
-            var user = await _authRepository.GetUserByRefreshTokenAsync(request.RefreshToken);
+            // Refresh Token'a göre kullanıcıyı bul (UserManager'ın Users listesi üzerinden)
+            var user = _userManager.Users.FirstOrDefault(u => u.RefreshToken == request.RefreshToken);
 
-            // 2. Kullanıcı yoksa veya jetonun süresi (7 gün) dolmuşsa işlemi reddet
             if (user == null || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
             {
-                throw new Exception("Hata: Geçersiz veya süresi dolmuş Refresh Token. Lütfen tekrar giriş yapın.");
+                throw new Exception("Geçersiz veya süresi dolmuş Refresh Token.");
             }
 
-            // 3. YENİ ACCESS TOKEN (JWT) ÜRETİMİ
-            var claims = new List<Claim>
+            // Microsoft Identity'den kullanıcının rollerini çek
+            var userRoles = await _userManager.GetRolesAsync(user);
+
+            // Token içine konulacak bilgileri (Claims) hazırla (Hata 6 buradaki ! işareti ile çözülüyor)
+            var authClaims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.Role, user.Role)
+                new Claim(ClaimTypes.Name, user.UserName!),
+                new Claim(ClaimTypes.Email, user.Email!)
             };
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-            var tokenDescriptor = new SecurityTokenDescriptor
+            foreach (var role in userRoles)
             {
-                Subject = new ClaimsIdentity(claims),
-                Expires = DateTime.UtcNow.AddHours(1),
-                Issuer = _configuration["Jwt:Issuer"],
-                Audience = _configuration["Jwt:Audience"],
-                SigningCredentials = creds
-            };
+                authClaims.Add(new Claim(ClaimTypes.Role, role));
+            }
 
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var jwtToken = tokenHandler.CreateToken(tokenDescriptor);
-            string newAccessToken = tokenHandler.WriteToken(jwtToken);
+            // JWT Token Üretimi
+            var authSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
+            var token = new JwtSecurityToken(
+                issuer: _configuration["Jwt:Issuer"],
+                audience: _configuration["Jwt:Audience"],
+                expires: DateTime.UtcNow.AddHours(1),
+                claims: authClaims,
+                signingCredentials: new SigningCredentials(authSigningKey, SecurityAlgorithms.HmacSha256)
+            );
 
-            // 4. YENİ REFRESH TOKEN ÜRETİMİ (Güvenlik için eskiyi iptal edip yenisini veriyoruz)
-            var randomNumber = new byte[32];
+            var jwtToken = new JwtSecurityTokenHandler().WriteToken(token);
+
+            // Refresh Token Üretimi
+            var randomNumber = new byte[64];
             using var rng = RandomNumberGenerator.Create();
             rng.GetBytes(randomNumber);
-            string newRefreshToken = Convert.ToBase64String(randomNumber);
+            var newRefreshToken = Convert.ToBase64String(randomNumber);
 
+            // Kullanıcının yeni Refresh Token'ını veritabanına kaydet
             user.RefreshToken = newRefreshToken;
             user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+            await _userManager.UpdateAsync(user);
 
-            await _authRepository.UpdateAsync(user);
-
+            // 7. Sonucu dön
             return new AuthResponseDto
             {
-                AccessToken = newAccessToken,
-                RefreshToken = newRefreshToken
+                Token = jwtToken,
+                RefreshToken = newRefreshToken,
+                Expiration = token.ValidTo
             };
         }
     }

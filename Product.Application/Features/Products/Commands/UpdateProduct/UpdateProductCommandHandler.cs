@@ -1,5 +1,7 @@
-﻿using MediatR;
+﻿using MassTransit;
+using MediatR;
 using Microsoft.Extensions.Caching.Distributed;
+using Product.Application.Events;
 using Product.Application.Interfaces.Repositories;
 
 namespace Product.Application.Features.Products.Commands.UpdateProduct
@@ -11,11 +13,13 @@ namespace Product.Application.Features.Products.Commands.UpdateProduct
     public class UpdateProductCommandHandler : IRequestHandler<UpdateProductCommand, bool>
     {
         private readonly IProductRepository _productRepository;
+        private readonly IPublishEndpoint _publishEndpoint;
         private readonly IDistributedCache _cache;
 
-        public UpdateProductCommandHandler(IProductRepository productRepository, IDistributedCache cache)
+        public UpdateProductCommandHandler(IProductRepository productRepository, IPublishEndpoint publishEndpoint, IDistributedCache cache)
         {
             _productRepository = productRepository;
+            _publishEndpoint = publishEndpoint;
             _cache = cache;
         }
 
@@ -40,6 +44,14 @@ namespace Product.Application.Features.Products.Commands.UpdateProduct
             // Ürün verisi değiştiği için okuma (Query) işlemlerini besleyen Redis önbelleği temizlenir.
             // Bu sayede bir sonraki listeleme isteğinde veritabanından güncel veriler çekilerek cache yeniden oluşturulur.
             await _cache.RemoveAsync("productList", cancellationToken);
+            await _publishEndpoint.Publish(new ProductUpdatedEvent
+            {
+                Id = product.Id,
+                Name = product.Name,
+                Price = product.Price,
+                Stock = product.Stock,
+                UpdatedDate = DateTime.UtcNow
+            }, cancellationToken);
 
             return true;
         }

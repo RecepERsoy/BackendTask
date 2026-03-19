@@ -38,7 +38,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+// Policy-Based ve Role-Based Authorization Kurallarý
+builder.Services.AddAuthorization(options =>
+{
+    // Kural 1: Sadece kartýnda "Admin" yazanlar bu kuraldan geçebilir.
+    options.AddPolicy("AdminOnlyPolicy", policy =>
+        policy.RequireRole("Admin"));
+
+    // Kural 2: Kartýnda "Admin" VEYA "Manager" (Yönetici) yazanlar bu kuraldan geçebilir.
+    // (Farklý yetki seviyeleri oluþturma maddesini tam karþýlar)
+    options.AddPolicy("ManagerOrAdminPolicy", policy =>
+        policy.RequireRole("Admin", "Manager"));
+});
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = builder.Configuration.GetSection("RedisCacheSettings:ConnectionString").Value;

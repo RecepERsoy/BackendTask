@@ -1,46 +1,39 @@
-﻿using Auth.Application.Interfaces;
-using Auth.Domain.Entities;
+﻿using Auth.Domain.Entities;
 using MediatR;
+using Microsoft.AspNetCore.Identity;
 
 namespace Auth.Application.Features.Auth.Commands.Register
 {
-    public class RegisterCommandHandler : IRequestHandler<RegisterCommand, string>
+    public class RegisterCommandHandler : IRequestHandler<RegisterCommand, Guid>
     {
-        private readonly IAuthRepository _authRepository;
-
-        // Repository'iyi içeri alıyoruz
-        public RegisterCommandHandler(IAuthRepository authRepository)
+        private readonly UserManager<User> _userManager;
+        public RegisterCommandHandler(UserManager<User> userManager)
         {
-            _authRepository = authRepository;
+            _userManager = userManager;
         }
 
-        public async Task<string> Handle(RegisterCommand request, CancellationToken cancellationToken)
+        public async Task<Guid> Handle(RegisterCommand request, CancellationToken cancellationToken)
         {
-            // KONTROL: Bu e-posta adresiyle daha önce kayıt olunmuş mu?
-            var existingUser = await _authRepository.GetUserByEmailAsync(request.Email);
-            if (existingUser != null)
+            var user = new User
             {
-                return "Hata: Bu e-posta adresi zaten kullanılıyor!";
-            }
-
-
-            string hashedPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);
-
-            // YENİ KULLANICI: Şifrelenmiş parola ile kullanıcıyı oluştur
-            var newUser = new User
-            {
-                Id = Guid.NewGuid(),
-                Username = request.Username,
+                UserName = request.UserName,
                 Email = request.Email,
-                PasswordHash = hashedPassword,
-                Role = "User",
                 CreatedDate = DateTime.UtcNow
             };
 
-            // KAYDET:Repositorye bu yeni kullanıcıyı SQL'e kaydetmesini söyle
-            await _authRepository.AddUserAsync(newUser);
+            // Kullanıcıyı oluştur ve şifresini otomatik hash'le
+            var result = await _userManager.CreateAsync(user, request.Password);
 
-            return "Kayıt işlemi başarıyla tamamlandı!";
+            if (!result.Succeeded)
+            {
+                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                throw new Exception($"Kayıt Başarısız: {errors}");
+            }
+
+            // Yeni kayıt olan herkese standart "User" rolünü ata
+            await _userManager.AddToRoleAsync(user, "User");
+
+            return user.Id;
         }
     }
 }

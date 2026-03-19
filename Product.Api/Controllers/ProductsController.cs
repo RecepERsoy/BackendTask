@@ -42,7 +42,7 @@ namespace Product.Api.Controllers
         /// Mevcut bir ürünü günceller. Bu işlem JWT doğrulaması ve yetki gerektirir.
         /// </summary>
         [HttpPut("update")]
-        [Authorize] // SADECE TOKEN'I OLANLAR GİREBİLİR!
+        [Authorize(Policy = "ManagerOrAdminPolicy")] // SADECE TOKEN'I OLANLAR GİREBİLİR!
         public async Task<IActionResult> UpdateProduct([FromBody] Product.Application.Features.Products.Commands.UpdateProduct.UpdateProductCommand command)
         {
             try

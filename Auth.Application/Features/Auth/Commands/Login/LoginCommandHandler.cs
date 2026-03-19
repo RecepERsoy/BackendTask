@@ -1,5 +1,6 @@
-﻿using Auth.Application.Interfaces;
+﻿using Auth.Domain.Entities;
 using MediatR;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -9,95 +10,69 @@ using System.Text;
 
 namespace Auth.Application.Features.Auth.Commands.Login
 {
-    /// <summary>
-    /// Kimlik doğrulama işlemi sonucunda istemciye iletilecek olan erişim (Access) ve yenileme (Refresh) jetonlarını taşıyan veri transfer nesnesi (DTO).
-    /// </summary>
-    public class AuthResponseDto
-    {
-        public string AccessToken { get; set; } = string.Empty;
-        public string RefreshToken { get; set; } = string.Empty;
-    }
-
-    /// <summary>
-    /// CQRS Pattern - Kullanıcı giriş işlemlerini ve token üretim süreçlerini (JWT & Refresh Token) yöneten Command Handler.
-    /// </summary>
     public class LoginCommandHandler : IRequestHandler<LoginCommand, AuthResponseDto>
     {
-        private readonly IAuthRepository _authRepository;
+        private readonly UserManager<User> _userManager;
         private readonly IConfiguration _configuration;
 
-        public LoginCommandHandler(IAuthRepository authRepository, IConfiguration configuration)
+        public LoginCommandHandler(UserManager<User> userManager, IConfiguration configuration)
         {
-            _authRepository = authRepository;
+            _userManager = userManager;
             _configuration = configuration;
         }
 
         public async Task<AuthResponseDto> Handle(LoginCommand request, CancellationToken cancellationToken)
         {
-            // Veri tutarlılığı ve güvenlik kontrolü: E-posta adresi sistemde kayıtlı değilse işlem reddedilir.
-            var user = await _authRepository.GetUserByEmailAsync(request.Email);
-            if (user == null)
-            {
-                throw new Exception("Hata: Kullanıcı bulunamadı!");
-            }
+            var user = await _userManager.FindByEmailAsync(request.Email);
+            if (user == null) throw new Exception("Kullanıcı bulunamadı.");
 
-            // Şifre doğrulama: Güvenlik zafiyetlerini önlemek amacıyla düz metin yerine BCrypt algoritması ile hash karşılaştırması yapılır.
-            bool isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash);
-            if (!isPasswordValid)
-            {
-                throw new Exception("Hata: Şifre yanlış!");
-            }
+            var isPasswordValid = await _userManager.CheckPasswordAsync(user, request.Password);
+            if (!isPasswordValid) throw new Exception("Hatalı şifre.");
 
-            // Erişim Jetonu (Access Token) Üretimi: Kullanıcıya mikroservisler arası yetkilendirme sağlayacak süreli (1 saat) JWT oluşturulur.
-            var claims = new List<Claim>
+            var userRoles = await _userManager.GetRolesAsync(user);
+
+            var authClaims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.Role, user.Role)
+                new Claim(ClaimTypes.Name, user.UserName!),
+                new Claim(ClaimTypes.Email, user.Email!)
             };
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-            var tokenDescriptor = new SecurityTokenDescriptor
+            foreach (var role in userRoles)
             {
-                Subject = new ClaimsIdentity(claims),
-                Expires = DateTime.UtcNow.AddHours(1),
-                Issuer = _configuration["Jwt:Issuer"],
-                Audience = _configuration["Jwt:Audience"],
-                SigningCredentials = creds
-            };
+                authClaims.Add(new Claim(ClaimTypes.Role, role));
+            }
 
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var jwtToken = tokenHandler.CreateToken(tokenDescriptor);
-            string accessToken = tokenHandler.WriteToken(jwtToken);
+            var authSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
+            var token = new JwtSecurityToken(
+                issuer: _configuration["Jwt:Issuer"],
+                audience: _configuration["Jwt:Audience"],
+                expires: DateTime.UtcNow.AddHours(1),
+                claims: authClaims,
+                signingCredentials: new SigningCredentials(authSigningKey, SecurityAlgorithms.HmacSha256)
+            );
 
-            // Yenileme Jetonu (Refresh Token) Üretimi ve Kaydı: Access token süresi dolduğunda oturumun kesintisiz devam etmesi için kullanıcıya 7 günlük yeni bir jeton atanır.
-            string refreshToken = GenerateRefreshToken();
+            // 1. Ana JWT Token
+            var jwtToken = new JwtSecurityTokenHandler().WriteToken(token);
 
-            user.RefreshToken = refreshToken;
-            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
-
-            // Yenileme jetonunun doğrulanabilmesi için güncel bilgilerin veritabanına kalıcı olarak işlenmesi.
-            await _authRepository.UpdateAsync(user);
-
-            return new AuthResponseDto
-            {
-                AccessToken = accessToken,
-                RefreshToken = refreshToken
-            };
-        }
-
-        /// <summary>
-        /// Kriptografik olarak güvenli (Cryptographically Secure), 32 byte uzunluğunda rastgele bir yenileme jetonu (Refresh Token) üretir.
-        /// </summary>
-        private static string GenerateRefreshToken()
-        {
-            var randomNumber = new byte[32];
+            // 2. Refresh Token Üretimi
+            var randomNumber = new byte[64];
             using var rng = RandomNumberGenerator.Create();
             rng.GetBytes(randomNumber);
-            return Convert.ToBase64String(randomNumber);
+            var refreshToken = Convert.ToBase64String(randomNumber);
+
+            // 3. Veritabanında Kullanıcıyı Güncelle
+            user.RefreshToken = refreshToken;
+            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+            await _userManager.UpdateAsync(user);
+
+            // 4. DTO'yu Geri Dön
+            return new AuthResponseDto
+            {
+                Token = jwtToken,
+                RefreshToken = refreshToken,
+                Expiration = token.ValidTo
+            };
         }
     }
 }
