@@ -6,8 +6,9 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
-
-// Add services to the container.
+// Microsoft Identity Entegrasyonu: 
+// Task'ta istenen merkezi kimlik doðrulama yapýsý için eklendi.
+// Þifre kurallarýný testleri ve geliþtirmeyi hýzlandýrmak adýna bilerek esnek tuttum (örn: özel karakter zorunluluðunu kapattým).
 builder.Services.AddIdentity<Auth.Domain.Entities.User, Microsoft.AspNetCore.Identity.IdentityRole<Guid>>(options =>
 {
     options.Password.RequireDigit = false;
@@ -21,11 +22,13 @@ builder.Services.AddIdentity<Auth.Domain.Entities.User, Microsoft.AspNetCore.Ide
 
 builder.Services.AddControllers();
 
+// CQRS Mimarisi:
+// Komut (Command) ve sorgularý (Query) ayýrmak için projeye MediatR kütüphanesini dahil ettim.
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(RegisterCommand).Assembly));
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 
 builder.Services.AddOpenApi();
 
+// Veritabaný baðlantýsý.
 builder.Services.AddDbContext<AuthDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -54,6 +57,10 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+
+// SEED DATA (Baþlangýç Verileri)
+// Proje ilk ayaða kalktýðýnda veritabanýný günceller ve test edebilmek için 
+// otomatik olarak "Admin" ve "User" rolleri ile varsayýlan bir admin hesabý oluþturur.
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<Auth.Infrastructure.Context.AuthDbContext>();

@@ -34,7 +34,7 @@ namespace Auth.Application.Features.Auth.Commands.RefreshToken
             // Microsoft Identity'den kullanıcının rollerini çek
             var userRoles = await _userManager.GetRolesAsync(user);
 
-            // Token içine konulacak bilgileri (Claims) hazırla (Hata 6 buradaki ! işareti ile çözülüyor)
+            // Token içine konulacak bilgileri (Claims) hazırla
             var authClaims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
@@ -70,7 +70,7 @@ namespace Auth.Application.Features.Auth.Commands.RefreshToken
             user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
             await _userManager.UpdateAsync(user);
 
-            // 7. Sonucu dön
+            // Sonucu dön
             return new AuthResponseDto
             {
                 Token = jwtToken,

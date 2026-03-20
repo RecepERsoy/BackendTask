@@ -16,11 +16,13 @@ builder.Services.AddMassTransit(x =>
 {
     x.UsingRabbitMq((context, cfg) =>
     {
-        cfg.Host("localhost", "/", h =>
+        var rabbitmq = builder.Configuration["RabbitMQ:Host"] ?? "localhost";
+        cfg.Host("rabbitmq", "/", h =>
         {
             h.Username("guest");
             h.Password("guest");
         });
+        cfg.ConfigureEndpoints(context);
     });
 });
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -45,8 +47,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnlyPolicy", policy =>
         policy.RequireRole("Admin"));
 
-    // Kural 2: Kartýnda "Admin" VEYA "Manager" (Yönetici) yazanlar bu kuraldan geçebilir.
-    // (Farklý yetki seviyeleri oluþturma maddesini tam karþýlar)
+    // Kural 2: Kartýnda "Admin" Veya "Manager" (Yönetici) yazanlar bu kuraldan geçebilir.
     options.AddPolicy("ManagerOrAdminPolicy", policy =>
         policy.RequireRole("Admin", "Manager"));
 });
@@ -59,7 +60,6 @@ builder.Services.AddStackExchangeRedisCache(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    // Swagger'a "Ben JWT Bearer þemasý kullanýyorum, bana bir buton ver" diyoruz
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",

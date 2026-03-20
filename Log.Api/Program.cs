@@ -16,19 +16,20 @@ builder.Host.UseSerilog();
 
 builder.Services.AddMassTransit(x =>
 {
-    x.AddConsumer<ProductAddedEventConsumer>();
+    x.AddConsumer<ProductAddedEvent>();
 
     x.UsingRabbitMq((context, cfg) =>
     {
-        cfg.Host("localhost", "/", h =>
+        var rabbitmq = builder.Configuration["RabbitMQ:Host"] ?? "localhost";
+        cfg.Host("rabbitmq", "/", h =>
         {
             h.Username("guest");
             h.Password("guest");
         });
-
+        cfg.ConfigureEndpoints(context);
         cfg.ReceiveEndpoint("log-product-events-queue", e =>
         {
-            e.ConfigureConsumer<ProductAddedEventConsumer>(context);
+            e.ConfigureConsumer<ProductAddedEvent>(context);
         });
     });
 });
